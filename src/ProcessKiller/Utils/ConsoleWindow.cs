@@ -1,9 +1,9 @@
 ﻿using System;
 using System.Runtime.InteropServices;
 
-namespace ProcessKiller.Classes
+namespace ProcessKiller.Utils
 {
-    public class ConsoleWindow
+    public static class ConsoleWindow
     {
         private const int SwHide = 0;
         private const int SwShow = 5;

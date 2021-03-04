@@ -1,161 +1,69 @@
-﻿using Newtonsoft.Json.Linq;
-using NLog;
+﻿using Newtonsoft.Json;
+using ProcessKiller.Logger;
+using ProcessKiller.Settings;
+using ProcessKiller.Utils;
 using System;
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Timers;
-using ProcessKiller.Classes;
 
 namespace ProcessKiller
 {
     public class MainClass
     {
-        private static JObject _jObject;
-        private static Logger _logger;
-
-        private static List<string> _killList;
-        private static int _timerInterval;
+        #region PrivateProps
 
         private static int _counter;
+        private static AppSettings _settings;
 
-        private static void CreateLogger() 
-        {
-            var lastLog = $"{AppDomain.CurrentDomain.BaseDirectory}\\log.lg";
-            var logBackupsFolder = $"{AppDomain.CurrentDomain.BaseDirectory}\\LogBackups";
-
-            try
-            {
-                if (File.Exists(lastLog))
-                {
-                    if (!Directory.Exists(logBackupsFolder))
-                    {
-                        Directory.CreateDirectory(logBackupsFolder);
-                    }
-
-                    var dateLastWrite = new FileInfo(lastLog).LastWriteTime;
-
-                    File.Move(lastLog, $"{logBackupsFolder}\\Log ({dateLastWrite:dd MMMM yyyy (hh mm ss)}).lg");
-                }
-            }
-            catch
-            {
-                // ignored
-            }
-
-            _logger = LogManager.GetCurrentClassLogger();
-
-            var config = new NLog.Config.LoggingConfiguration();
-
-            var logfile = new NLog.Targets.FileTarget("logfile") { FileName = lastLog };
-            var logconsole = new NLog.Targets.ConsoleTarget("logconsole");
-
-            config.AddRule(LogLevel.Info, LogLevel.Fatal, logconsole);
-            config.AddRule(LogLevel.Debug, LogLevel.Fatal, logfile);
-
-            LogManager.Configuration = config;
-
-            _logger.Info("");
-            _logger.Info("The launch is successful!");
-            _logger.Info("");
-        }
-        private static void GetSetting() 
-        {
-            var file = $@"{AppDomain.CurrentDomain.BaseDirectory}\Settings.json";
-
-            try
-            {
-                //***************************************
-
-                _killList = new List<string>();
-
-                var str = File.ReadAllText(file);
-                _jObject = JObject.Parse(str);
-
-                var processes = _jObject["Processes"].Value<JArray>();
-
-                foreach (var process in processes)
-                {
-                    _killList.Add(process.ToString());
-                }
-
-                //***************************************
-
-                if ((bool) _jObject["HideWindow"])
-                {
-                    ConsoleWindow.Hide();
-                }
-
-                //***************************************
-
-                NativeMethods.BlockInput((bool)_jObject["BlockInput"]);
-
-                //***************************************
-
-                _timerInterval = (int) _jObject["Interval"];
-
-                //***************************************
-
-                var blockStream = new FileStream(file, FileMode.Open);
-
-                //***************************************
-            }
-            catch (Exception ex)
-            {
-                _logger.Error($"{ex.Message}\n***********\n{ex.StackTrace}\n***********");
-                Console.ReadKey();
-
-                Environment.Exit(-1);
-            }
-
-        }
-        public static string ConvertComputerValues(dynamic value)
-        {
-            string[] suf = { "Byte", "KB", "MB", "GB", "TB", "PB", "EB" };
-
-            if (value == 0) return "0" + suf[0];
-
-            var bytes = Math.Abs(value);
-            var place = Convert.ToInt32(Math.Floor(Math.Log(bytes, 1024)));
-            var num = Math.Round(bytes / Math.Pow(1024, place), 1);
-
-            return Math.Sign(value) * num + " " + suf[place];
-        }
+        #endregion
 
         public static void Main()
         {
-            CreateLogger();
-            _counter = 0;
-            
-            _logger.Info("Reading settings");
+            try
+            {
+                Variables.Init();
+                
+                MyLogger.Instance.Information("Reading settings");
+                
+                _settings = JsonConvert.DeserializeObject<AppSettings>(File.ReadAllText(Variables.SettingsFile));
 
-            GetSetting();
+                if (_settings is null)
+                    throw new Exception("_settings is null!");
 
-            _logger.Info("Reading settings finished!");
-            _logger.Info("");
+                if (_settings.HideWindow)
+                    ConsoleWindow.Hide();
 
+                MyLogger.Instance.Information("Reading settings finished!");
+                MyLogger.Instance.Information("Creating timer");
 
-            _logger.Info("Creating timer");
+                var timer = new Timer(_settings.Interval);
+                timer.Elapsed += TimerOnElapsed;
+                timer.Start();
 
-            var timer = new System.Timers.Timer(_timerInterval);
-            timer.Elapsed += TimerOnElapsed;
-            timer.Start();
+                MyLogger.Instance.Information("Create timer finished!");
 
-            _logger.Info("Create timer finished!");
-            _logger.Info("");
-            _logger.Info("");
-            _logger.Info("");
-
-            TimerOnElapsed(null, null);
+                if (_counter == 0)
+                    TimerOnElapsed(null, null);
+            }
+            catch (Exception ex)
+            {
+                MyLogger.Instance.Fatal(ex, "Error!");
+                return;
+            }
 
             Console.ReadKey();
+            MyLogger.Instance.Information("Program closed!");
         }
+
+        #region Methods
 
         private static void TimerOnElapsed(object sender, ElapsedEventArgs e)
         {
-            _logger.Info("=== Method run! === ");
-            _logger.Info("Number of launches: " + _counter);
+            MyLogger.Instance.Information("");
+            MyLogger.Instance.Information("=== Method run! === ");
+            MyLogger.Instance.Information("Number of launches: " + _counter);
 
             _counter++;
 
@@ -163,34 +71,33 @@ namespace ProcessKiller
             {
                 var getProcesses = Process.GetProcesses().ToList();
 
-                _logger.Info("-------------------------");
-                _logger.Info("Number of processes: " + getProcesses.Count);
-                _logger.Info("Kill processes:");
+                MyLogger.Instance.Information("-------------------------");
+                MyLogger.Instance.Information("Number of processes: " + getProcesses.Count);
+                MyLogger.Instance.Information("Kill processes:");
 
-                getProcesses.ForEach(delegate(Process process)
+                getProcesses.ForEach(processFromSystem =>
                 {
-                     _killList.ForEach(delegate(string killProcess)
-                     {
-                         if (string.Equals(process.ProcessName, killProcess, StringComparison.CurrentCultureIgnoreCase))
-                         {
-                             process.Kill();
-                             _logger.Info($"{process.ProcessName} (PID = {process.Id}, Memory = {ConvertComputerValues(process.PrivateMemorySize64)})");
-                         }
-                     });
+                    _settings.Processes.ToList().ForEach(processNameFromKillList =>
+                    {
+                        if (string.Equals(processFromSystem.ProcessName, processNameFromKillList, StringComparison.CurrentCultureIgnoreCase))
+                        {
+                            processFromSystem.Kill();
+                            MyLogger.Instance.Information(
+                                $"{processFromSystem.ProcessName} (PID = {processFromSystem.Id}, Memory = {Utils.Utils.ConvertComputerValues(processFromSystem.PrivateMemorySize64)})");
+                        }
+                    });
                 });
-
-                _logger.Info("-------------------------");
+                
+                MyLogger.Instance.Information("-------------------------");
             }
             catch (Exception ex)
             {
-                _logger.Error(ex.Message);
+                MyLogger.Instance.Error(ex.Message);
             }
 
-            _logger.Info("=== The method is completed! === ");
-            _logger.Info("");
-            _logger.Info("");
-            _logger.Info("");
+            MyLogger.Instance.Information("=== The method is completed! === ");
         }
-    }
 
+        #endregion
+    }
 }
