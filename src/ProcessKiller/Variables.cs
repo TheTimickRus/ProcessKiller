@@ -4,6 +4,8 @@ using Newtonsoft.Json;
 using ProcessKiller.Logger;
 using ProcessKiller.Settings;
 
+// ReSharper disable MemberCanBePrivate.Global
+
 namespace ProcessKiller
 {
     public static class Variables
@@ -16,16 +18,15 @@ namespace ProcessKiller
             if (Directory.Exists(LogsFolder) is false) 
                 Directory.CreateDirectory(LogsFolder);
 
-            if (File.Exists(SettingsFile) is false || Deserialize() is false)
+            if (File.Exists(SettingsFile) && Deserialize()) return;
+            
+            try
             {
-                try
-                {
-                    File.WriteAllText(SettingsFile, JsonConvert.SerializeObject(new AppSettings(), Formatting.Indented));
-                }
-                catch (Exception ex)
-                {
-                    MyLogger.Instance.Fatal(ex, "Error creating the settings file!");
-                }
+                File.WriteAllText(SettingsFile, JsonConvert.SerializeObject(new AppSettings(), Formatting.Indented));
+            }
+            catch (Exception ex)
+            {
+                MyLogger.Instance.Fatal(ex, "Error creating the settings file!");
             }
         }
 

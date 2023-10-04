@@ -6,21 +6,23 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 
+// ReSharper disable ClassNeverInstantiated.Global
+
 namespace Installer
 {
     public class Settings
     {
         public bool SilentInstall { get; set; }
-        public string FolderName { get; set; }
-        public string FileName { get; set; }
-        public string TaskName { get; set; }
+        public string FolderName { get; set; } = "uts";
+        public string FileName { get; set; } = "Updater";
+        public string TaskName { get; set; } = "UTS";
     }
 
     public class MainClass
     {
-        private static Settings _settings;
+        private static Settings? _settings;
 
-        private static Settings GetSetting(string file = "InstallerSettings.json")
+        private static Settings? GetSetting(string file = "InstallerSettings.json")
         {
             try
             {
@@ -33,33 +35,41 @@ namespace Installer
             }
         }
 
-        private static Process FindProcess(string processName)
+        private static void SaveSettings(Settings settings)
         {
-            Process needProc = null;
-
-            var processes = Process.GetProcesses().ToList();
-            processes.ForEach(process =>
+            try
             {
-                if (process.ProcessName == processName)
-                {
-                    needProc = process;
-                    return;
-                }
-            });
+                File.WriteAllText("InstallerSettings.json", JsonConvert.SerializeObject(settings, Formatting.Indented));
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(ex.Message);
+            }
+        }
 
-            return needProc;
+        private static Process? FindProcess(string name)
+        {
+            return Process.GetProcesses().FirstOrDefault(proc => proc.ProcessName == name);
         }
 
         public static void Main()
         {
-            _settings = GetSetting() ?? new Settings()
+            _settings = GetSetting();
+            if (_settings is null)
             {
-                SilentInstall = false,
-                FileName = "uts",
-                FolderName = "Updater",
-                TaskName = "UTS"
-            };
-
+                SaveSettings(
+                    new Settings
+                    {
+                        SilentInstall = false,
+                        FileName = "uts",
+                        FolderName = "Updater",
+                        TaskName = "UTS"
+                    }
+                );
+                
+                return;
+            }
+            
             if (_settings.SilentInstall)
             {
                 Install();
@@ -86,10 +96,12 @@ namespace Installer
             Console.ReadKey();
         }
 
-        public static void Install()
+        private static void Install()
         {
             try
             {
+                if (_settings is null) throw new Exception("_settings is null");
+                
                 var path = $"{Environment.CurrentDirectory}\\Files";
                 var pathInstall = $"{Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData)}\\{_settings.FolderName}";
 
@@ -157,10 +169,12 @@ namespace Installer
             }
         }
 
-        public static void Uninstall()
+        private static void Uninstall()
         {
             try
             {
+                if (_settings is null) throw new Exception("_settings is null");
+                
                 var pathInstall = $"{Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData)}\\{_settings.FolderName}";
 
                 Console.WriteLine("\n******************");
